@@ -336,6 +336,7 @@ export const TableSection: React.FC<TableSectionProps> = ({
             { key: 'section2', label: periods.inFocus, days: section2Days },
             { key: 'section3', label: periods.upcoming, days: section3Days },
           ]}
+          monthStart={dateSelection?.granularity === 'month' ? dateSelection.startDate : undefined}
         />
       ) : (
       <div className="overflow-x-auto">

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { DashboardItem, PeriodDayInfo, ChauffeurFulfillmentDetail } from '../types';
 import { getChauffeurDayMetric } from '../utils/chauffeurChartUtils';
 
@@ -12,6 +12,8 @@ interface ChauffeurRankTimelineProps {
     label: string;
     days: PeriodDayInfo[];
   }[];
+  /** ISO date (YYYY-MM-DD) of the first day of the focused month. When set, the grid switches to weekly columns. */
+  monthStart?: string;
 }
 
 const TIERS: Record<Tier, { solid: string; tint: string; soft: string }> = {
@@ -28,6 +30,56 @@ const SECTION_HEAD: Record<SectionKey, { bg: string; text: string }> = {
 
 const UNIT_HEIGHT = 6; // px per recommended booking
 const BAR_GAP = 2; // px between day bars
+
+
+const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const DAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+interface Col {
+  key: string;
+  top: string;
+  sub: string;
+}
+
+interface Cell {
+  rank: Tier;
+  rec: number;
+  ful: number;
+  detail?: ChauffeurFulfillmentDetail;
+  title: string;
+}
+
+// Month view buckets: days 1-7, 8-14, 15-21, 22-28 and 29-end
+const monthWeeks = (year: number, month: number) => {
+  const dim = new Date(year, month + 1, 0).getDate();
+  return [0, 1, 2, 3, 4].map((k) => {
+    const a = 1 + k * 7;
+    const b = Math.min(a + 6, dim);
+    return { k, a, b, range: `${a}\u2013${b}` };
+  });
+};
+
+const dayInfoFor = (year: number, month: number, day: number): PeriodDayInfo => {
+  const d = new Date(year, month, day);
+  const dayName = DAY_SHORT[d.getDay()];
+  const dayNum = String(day).padStart(2, '0');
+  const mon = MONTH_SHORT[month];
+  return {
+    key: `m-${year}-${month}-${day}`,
+    dateStr: `${mon} ${dayNum}`,
+    fullDate: `${dayName}, ${mon} ${dayNum}, ${year}`,
+    dayName,
+    dayNum,
+    isoDate: `${year}-${String(month + 1).padStart(2, '0')}-${dayNum}`,
+  };
+};
+
+const TIER_ORDER: Tier[] = ['Top 10', 'Top 20', 'Top 50'];
+const modeRank = (ranks: Tier[]): Tier => {
+  const counts: Record<Tier, number> = { 'Top 10': 0, 'Top 20': 0, 'Top 50': 0 };
+  ranks.forEach((r) => (counts[r] += 1));
+  return TIER_ORDER.reduce((best, t) => (counts[t] > counts[best] ? t : best), TIER_ORDER[0]);
+};
 
 const FONT =
   "-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', Helvetica, sans-serif";
@@ -57,10 +109,99 @@ const legendChip = (
   </span>
 );
 
-export const ChauffeurRankTimeline: React.FC<ChauffeurRankTimelineProps> = ({ items, sections }) => {
+export const ChauffeurRankTimeline: React.FC<ChauffeurRankTimelineProps> = ({ items, sections: sectionsProp, monthStart }) => {
   const gridCols = '240px repeat(3, minmax(0, 1fr))';
   const [infoOpen, setInfoOpen] = useState(false);
   const [hoverKey, setHoverKey] = useState<string | null>(null);
+  const monthMode = !!monthStart;
+
+  // Month view: weekly totals per chauffeur for previous / selected / next month
+  const monthData = useMemo(() => {
+    if (!monthStart) return null;
+    const [yy, mm] = monthStart.split('-').map(Number);
+    const keys: SectionKey[] = ['section1', 'section2', 'section3'];
+    const out: Record<string, Cell[][]> = {};
+    let maxRec = 1;
+    items.forEach((item) => {
+      out[item.id] = keys.map((secKey, si) => {
+        const d0 = new Date(yy, mm - 1 + (si - 1), 1);
+        const y = d0.getFullYear();
+        const mo = d0.getMonth();
+        const raw = monthWeeks(y, mo).map((w) => {
+          let rec = 0;
+          let ful = 0;
+          const ranks: Tier[] = [];
+          const sum = { on: 0, dsat: 0, warn: 0, noShow: 0, happy: 0 };
+          for (let day = w.a; day <= w.b; day++) {
+            const m = getChauffeurDayMetric(item, secKey, day - 1, dayInfoFor(y, mo, day));
+            rec += m.bookingsRecommended;
+            ful += Math.min(m.bookingsFulfilled, m.bookingsRecommended);
+            ranks.push(m.rank);
+            if (m.fulfillmentDetail) {
+              sum.on += m.fulfillmentDetail.bookingsFulfilledOnTime.count;
+              sum.dsat += m.fulfillmentDetail.dsat.count;
+              sum.warn += m.fulfillmentDetail.warnings.count;
+              sum.noShow += m.fulfillmentDetail.noShow.count;
+              sum.happy += m.fulfillmentDetail.happyRating.count;
+            }
+          }
+          return { w, rec, ful, ranks, sum };
+        });
+        const period =
+          secKey === 'section1' ? item.precedingPeriod : secKey === 'section2' ? item.inFocusPeriod : item.upcomingPeriod;
+        const pd = period?.fulfillmentDetail;
+        const totalFul = raw.reduce((a, r) => a + r.ful, 0) || 1;
+        return raw.map((r) => {
+          // If the chauffeur carries a period-level breakdown, split it across weeks by fulfilled share
+          const share = (n: number) => Math.round(n * (r.ful / totalFul));
+          const detail: ChauffeurFulfillmentDetail = pd
+            ? {
+                bookingsFulfilledOnTime: { count: share(pd.bookingsFulfilledOnTime.count), suffix: pd.bookingsFulfilledOnTime.suffix },
+                dsat: { count: share(pd.dsat.count), suffix: pd.dsat.suffix },
+                warnings: { count: share(pd.warnings.count), suffix: pd.warnings.suffix },
+                noShow: { count: share(pd.noShow.count), suffix: pd.noShow.suffix },
+                happyRating: { count: share(pd.happyRating.count), suffix: pd.happyRating.suffix },
+              }
+            : {
+                bookingsFulfilledOnTime: { count: r.sum.on, suffix: '(+)' },
+                dsat: { count: r.sum.dsat, suffix: '(-)' },
+                warnings: { count: r.sum.warn, suffix: '(-)' },
+                noShow: { count: r.sum.noShow, suffix: '(--)' },
+                happyRating: { count: r.sum.happy, suffix: '(++)' },
+              };
+          if (r.rec > maxRec) maxRec = r.rec;
+          return {
+            rank: modeRank(r.ranks),
+            rec: r.rec,
+            ful: r.ful,
+            detail,
+            title: `Week ${r.w.k + 1} \u00b7 ${r.w.range} ${MONTH_SHORT[mo]}`,
+          };
+        });
+      });
+    });
+    return { out, maxRec };
+  }, [items, monthStart]);
+
+  // Bars: fixed height per booking in day view, scaled to the busiest week in month view
+  const unit = monthMode && monthData ? 48 / monthData.maxRec : UNIT_HEIGHT;
+
+  // Column headers per section
+  const sections = sectionsProp.map((sec, si) => {
+    let cols: Col[];
+    if (monthMode && monthStart) {
+      const [yy, mm] = monthStart.split('-').map(Number);
+      const d0 = new Date(yy, mm - 1 + (si - 1), 1);
+      cols = monthWeeks(d0.getFullYear(), d0.getMonth()).map((w) => ({
+        key: `${sec.key}-w${w.k}`,
+        top: `WEEK ${w.k + 1}`,
+        sub: w.range,
+      }));
+    } else {
+      cols = sec.days.map((d) => ({ key: d.key, top: d.dayName.toUpperCase(), sub: String(parseInt(d.dayNum, 10)) }));
+    }
+    return { ...sec, cols };
+  });
 
   return (
     <div style={{ fontFamily: FONT, color: '#1A2230', background: '#FFFFFF' }}>
@@ -214,12 +355,12 @@ export const ChauffeurRankTimeline: React.FC<ChauffeurRankTimelineProps> = ({ it
                 <div
                   style={{
                     display: 'grid',
-                    gridTemplateColumns: `repeat(${s.days.length}, minmax(0, 1fr))`,
+                    gridTemplateColumns: `repeat(${s.cols.length}, minmax(0, 1fr))`,
                     columnGap: BAR_GAP,
                     padding: '0 10px 8px',
                   }}
                 >
-                  {s.days.map((d) => (
+                  {s.cols.map((d) => (
                     <div
                       key={d.key}
                       style={{
@@ -232,8 +373,8 @@ export const ChauffeurRankTimeline: React.FC<ChauffeurRankTimelineProps> = ({ it
                         color: '#6B7685',
                       }}
                     >
-                      <span style={{ letterSpacing: '0.04em' }}>{d.dayName.toUpperCase()}</span>
-                      <span style={{ fontWeight: 600, color: '#3A4352' }}>{String(parseInt(d.dayNum, 10))}</span>
+                      <span style={{ letterSpacing: '0.04em' }}>{d.top}</span>
+                      <span style={{ fontWeight: 600, color: '#3A4352' }}>{d.sub}</span>
                     </div>
                   ))}
                 </div>
@@ -293,22 +434,35 @@ export const ChauffeurRankTimeline: React.FC<ChauffeurRankTimelineProps> = ({ it
                     <div
                       style={{
                         display: 'grid',
-                        gridTemplateColumns: `repeat(${s.days.length}, minmax(0, 1fr))`,
+                        gridTemplateColumns: `repeat(${s.cols.length}, minmax(0, 1fr))`,
                         columnGap: BAR_GAP,
                         height: 52,
                         borderBottom: '1px solid #E9EDF2',
                       }}
                     >
-                      {s.days.map((d, di) => {
-                        const m = getChauffeurDayMetric(item, s.key, di, d);
-                        const c = TIERS[m.rank];
-                        const rec = m.bookingsRecommended;
-                        const ful = Math.min(m.bookingsFulfilled, rec);
-                        const dayLabel = `${d.dayName} ${parseInt(d.dayNum, 10)} ${d.dateStr.split(' ')[0]}`;
+                      {s.cols.map((col, di) => {
+                        let cell: Cell;
+                        if (monthMode && monthData) {
+                          cell = monthData.out[item.id][si][di];
+                        } else {
+                          const d = s.days[di];
+                          const m = getChauffeurDayMetric(item, s.key, di, d);
+                          cell = {
+                            rank: m.rank,
+                            rec: m.bookingsRecommended,
+                            ful: Math.min(m.bookingsFulfilled, m.bookingsRecommended),
+                            detail: m.fulfillmentDetail,
+                            title: `${d.dayName} ${parseInt(d.dayNum, 10)} ${d.dateStr.split(' ')[0]}`,
+                          };
+                        }
+                        const c = TIERS[cell.rank];
+                        const rec = cell.rec;
+                        const ful = cell.ful;
+                        const dayLabel = cell.title;
                         const key = `${item.id}-${s.key}-${di}`;
                         const isHover = hoverKey === key;
                         const pct = rec > 0 ? Math.round((ful / rec) * 100) : 0;
-                        const detail: ChauffeurFulfillmentDetail | undefined = m.fulfillmentDetail;
+                        const detail: ChauffeurFulfillmentDetail | undefined = cell.detail;
                         const GOOD = { fontSize: 11, fontWeight: 600, color: '#0B7A47' } as const;
                         const BAD = { fontSize: 11, fontWeight: 600, color: '#C2410C' } as const;
                         const GREY = { fontSize: 11, color: '#98A2B3' } as const;
@@ -340,15 +494,15 @@ export const ChauffeurRankTimeline: React.FC<ChauffeurRankTimelineProps> = ({ it
                           'Top 10': { b: '#B7E8CF', t: '#0B7A47' },
                           'Top 20': { b: '#C3D6FB', t: '#1D4FC4' },
                           'Top 50': { b: '#F6DE95', t: '#8A6100' },
-                        }[m.rank];
+                        }[cell.rank];
                         const tipPos: React.CSSProperties = {
                           ...(ri < 3 ? { top: 'calc(100% + 6px)' } : { bottom: 'calc(100% + 6px)' }),
-                          ...(si === 2 && di >= 4 ? { right: -6 } : { left: '50%', transform: 'translateX(-50%)' }),
+                          ...(si === 2 && di >= s.cols.length - 3 ? { right: -6 } : { left: '50%', transform: 'translateX(-50%)' }),
                         };
 
                         return (
                           <div
-                            key={d.key}
+                            key={col.key}
                             onMouseEnter={() => setHoverKey(key)}
                             onMouseLeave={() => setHoverKey((k) => (k === key ? null : k))}
                             style={{
@@ -389,7 +543,7 @@ export const ChauffeurRankTimeline: React.FC<ChauffeurRankTimelineProps> = ({ it
                                   display: 'flex',
                                   flexDirection: 'column',
                                   width: '100%',
-                                  height: rec * UNIT_HEIGHT,
+                                  height: rec * unit,
                                   borderRadius: '3px 3px 0 0',
                                   overflow: 'hidden',
                                   ...(forecast
@@ -403,7 +557,7 @@ export const ChauffeurRankTimeline: React.FC<ChauffeurRankTimelineProps> = ({ it
                               >
                                 <div
                                   style={{
-                                    flex: `0 0 ${(rec - ful) * UNIT_HEIGHT}px`,
+                                    flex: `0 0 ${(rec - ful) * unit}px`,
                                     ...(forecast ? {} : { background: c.tint }),
                                   }}
                                 />
@@ -443,7 +597,7 @@ export const ChauffeurRankTimeline: React.FC<ChauffeurRankTimelineProps> = ({ it
                                       color: pill.t,
                                     }}
                                   >
-                                    {m.rank}
+                                    {cell.rank}
                                   </span>
                                 </div>
                                 <div
