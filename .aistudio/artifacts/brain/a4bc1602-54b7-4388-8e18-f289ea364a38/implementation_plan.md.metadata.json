@@ -1,0 +1,6 @@
+{
+  "summary": "Implementation plan for the dashboard date filter: adding a high-efficiency segmented toggle (Day | Week | Month) with quick-select popover, enforcing strict completion boundaries (day <= yesterday, week <= last week Monday-Sunday, month <= last month), and propagating the selected range to dashboard table sections.",
+  "updatedAt": "2026-10-14T09:43:30.040573502Z",
+  "requestFeedback": true,
+  "userFacing": true
+}

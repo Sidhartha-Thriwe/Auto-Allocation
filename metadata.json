@@ -1,0 +1,8 @@
+{
+  "name": "Auto Allocation - Dashboard",
+  "description": "High-fidelity performance tracking and analytics dashboard for lead generation campaigns, CAC optimization, and prospect volume.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
