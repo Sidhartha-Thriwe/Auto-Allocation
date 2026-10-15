@@ -14,9 +14,7 @@ import {
 } from 'lucide-react';
 import { DashboardItem, DashboardTab, FilterStatus, DateRangeOption, DateFilterSelection, PeriodDayInfo } from '../types';
 import { getSectionDays } from '../utils/dateFilterUtils';
-import { getChauffeurDayMetric } from '../utils/chauffeurChartUtils';
-import { ChauffeurDayBarChart } from './ChauffeurDayBarChart';
-import { ChauffeurSectionTimeline } from './ChauffeurSectionTimeline';
+import { ChauffeurRankTimeline } from './ChauffeurRankTimeline';
 
 interface TableSectionProps {
   currentTab: DashboardTab;
@@ -329,84 +327,20 @@ export const TableSection: React.FC<TableSectionProps> = ({
         </div>
       </div>
 
-      {/* Chauffeur Legend Bar (Only shown on By Chauffeur tab) */}
-      {currentTab === 'chauffeurs' && (
-        <div className="px-4 py-2 bg-slate-50/90 border-b border-slate-200/80 flex flex-wrap items-center justify-between gap-3 text-xs">
-          <div className="flex flex-wrap items-center gap-3">
-            <span className="text-slate-500 font-semibold text-[11px] uppercase tracking-wider font-mono">Rank:</span>
-            <span className="inline-flex items-center gap-1.5 font-medium text-emerald-800 bg-emerald-50/80 px-2 py-0.5 rounded border border-emerald-200/70 text-[11px]">
-              <span className="w-2.5 h-2.5 rounded-xs bg-emerald-500" />
-              Top 10 (Green)
-            </span>
-            <span className="inline-flex items-center gap-1.5 font-medium text-blue-800 bg-blue-50/80 px-2 py-0.5 rounded border border-blue-200/70 text-[11px]">
-              <span className="w-2.5 h-2.5 rounded-xs bg-blue-500" />
-              Top 20 (Blue)
-            </span>
-            <span className="inline-flex items-center gap-1.5 font-medium text-amber-800 bg-amber-50/80 px-2 py-0.5 rounded border border-amber-200/70 text-[11px]">
-              <span className="w-2.5 h-2.5 rounded-xs bg-amber-400" />
-              Top 50 (Yellow)
-            </span>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-4 text-slate-600 text-[11px]">
-            <span className="inline-flex items-center gap-1.5 font-medium">
-              <span className="w-3.5 h-3.5 rounded-xs bg-emerald-500 flex flex-col justify-end border border-slate-200">
-                <span className="w-full h-1.5 bg-emerald-200 rounded-t-xs" />
-              </span>
-              <span>2-Stack: Lower (Fulfilled) / Upper (Recommended)</span>
-            </span>
-            <span className="inline-flex items-center gap-1.5 font-medium">
-              <span className="w-2 h-2 rounded-full bg-slate-300" />
-              <span>Solid dot (No bookings)</span>
-            </span>
-            <span className="inline-flex items-center gap-1.5 font-medium text-emerald-800">
-              <span className="w-2.5 h-2.5 rounded-full border-2 border-dotted border-emerald-600 bg-transparent" />
-              <span>Dotted (Section 3 Upcoming Forecast)</span>
-            </span>
-          </div>
-        </div>
-      )}
-
-      {/* Table Container */}
+      {/* By Chauffeur: rank timeline (replaces table) */}
+      {currentTab === 'chauffeurs' ? (
+        <ChauffeurRankTimeline
+          items={sortedData}
+          sections={[
+            { key: 'section1', label: periods.preceding, days: section1Days },
+            { key: 'section2', label: periods.inFocus, days: section2Days },
+            { key: 'section3', label: periods.upcoming, days: section3Days },
+          ]}
+        />
+      ) : (
       <div className="overflow-x-auto">
         <table className="w-full text-left border-collapse min-w-[1150px]">
           <thead>
-            {currentTab === 'chauffeurs' ? (
-              <>
-                {/* Section Header Band - Only Dates, No Individual Dates */}
-                <tr className="border-b border-slate-200/90 text-xs font-bold uppercase tracking-wider">
-                  <th
-                    className="py-3.5 px-5 w-[220px] min-w-[200px] bg-slate-50/90 text-slate-700 border-r border-slate-200/80 align-middle font-mono text-[11px] font-bold sticky left-0 z-20 shadow-[1px_0_3px_rgba(0,0,0,0.03)]"
-                  >
-                    CHAUFFEUR
-                  </th>
-                  {/* Section 1 */}
-                  <th
-                    className="py-3 px-4 text-center bg-slate-100/90 text-slate-800 border-r border-slate-200 font-bold tracking-tight"
-                  >
-                    <span className="inline-flex items-center gap-1.5 font-bold text-slate-800 text-xs normal-case">
-                      {periods.preceding}
-                    </span>
-                  </th>
-                  {/* Section 2 */}
-                  <th
-                    className="py-3 px-4 text-center bg-blue-50/90 text-blue-900 border-r border-blue-200/90 font-bold tracking-tight"
-                  >
-                    <span className="inline-flex items-center gap-1.5 font-bold text-blue-900 text-xs normal-case">
-                      {periods.inFocus}
-                    </span>
-                  </th>
-                  {/* Section 3 */}
-                  <th
-                    className="py-3 px-4 text-center bg-emerald-50/90 text-emerald-900 font-bold tracking-tight"
-                  >
-                    <span className="inline-flex items-center gap-1.5 font-bold text-emerald-900 text-xs normal-case">
-                      {periods.upcoming}
-                    </span>
-                  </th>
-                </tr>
-              </>
-            ) : (
               <tr className="border-b border-slate-200/90 bg-white text-[11px] font-semibold text-slate-500 uppercase tracking-[0.08em] font-mono">
                 <th className="py-3.5 px-5 w-[20%] font-semibold">
                   {getFirstColumnHeader()}
@@ -492,13 +426,12 @@ export const TableSection: React.FC<TableSectionProps> = ({
                   </button>
                 </th>
               </tr>
-            )}
           </thead>
 
           <tbody className="divide-y divide-slate-100 text-slate-800 text-[13px]">
             {sortedData.length === 0 ? (
               <tr>
-                <td colSpan={currentTab === 'chauffeurs' ? 10 : 9} className="py-12 text-center text-slate-400 text-xs">
+                <td colSpan={9} className="py-12 text-center text-slate-400 text-xs">
                   No records matching your search and filter criteria.
                 </td>
               </tr>
@@ -539,100 +472,6 @@ export const TableSection: React.FC<TableSectionProps> = ({
                 const autoCsat = (csatScore + 0.1).toFixed(1);
 
                 const autoComplaints = Math.round(item.complaints * 0.22);
-
-                // Chauffeur-specific values with daily bar charts under each of the 3 sections
-                if (currentTab === 'chauffeurs') {
-                  const partnerDisplay = item.partnerName || item.subTitle || 'AB Transfer';
-
-                  return (
-                    <tr
-                      key={item.id}
-                      className="hover:bg-slate-50/70 transition-colors"
-                    >
-                      {/* Chauffeur Column (Name + Partner Name below name) */}
-                      <td className="py-3 px-5 border-r border-slate-100 bg-white sticky left-0 z-10 shadow-[1px_0_3px_rgba(0,0,0,0.03)]">
-                        <button
-                          type="button"
-                          onClick={() => onSelectItem && onSelectItem(item)}
-                          className="text-left group cursor-pointer block"
-                        >
-                          <span className="font-semibold tracking-tight text-slate-900 group-hover:text-blue-600 transition-colors block text-xs sm:text-sm">
-                            {item.name}
-                          </span>
-                          <span className="block text-[11px] text-slate-500 font-medium truncate max-w-[200px] group-hover:text-blue-500 transition-colors">
-                            {partnerDisplay}
-                          </span>
-                        </button>
-                      </td>
-
-                      {/* SECTION 1: Daily Bar Charts */}
-                      {section1Days.map((dayInfo, idx) => {
-                        const metric = getChauffeurDayMetric(item, 'section1', idx, dayInfo);
-                        return (
-                          <td
-                            key={dayInfo.key}
-                            className="py-2 px-1 text-center border-r border-slate-100 bg-slate-50/30"
-                          >
-                            <ChauffeurDayBarChart
-                              dayInfo={dayInfo}
-                              rank={metric.rank}
-                              bookingsRecommended={metric.bookingsRecommended}
-                              bookingsFulfilled={metric.bookingsFulfilled}
-                              section="section1"
-                              chauffeurName={item.name}
-                              partnerName={partnerDisplay}
-                              fulfillmentDetail={metric.fulfillmentDetail}
-                            />
-                          </td>
-                        );
-                      })}
-
-                      {/* SECTION 2: Daily Bar Charts */}
-                      {section2Days.map((dayInfo, idx) => {
-                        const metric = getChauffeurDayMetric(item, 'section2', idx, dayInfo);
-                        return (
-                          <td
-                            key={dayInfo.key}
-                            className="py-2 px-1 text-center border-r border-blue-100 bg-blue-50/15"
-                          >
-                            <ChauffeurDayBarChart
-                              dayInfo={dayInfo}
-                              rank={metric.rank}
-                              bookingsRecommended={metric.bookingsRecommended}
-                              bookingsFulfilled={metric.bookingsFulfilled}
-                              section="section2"
-                              chauffeurName={item.name}
-                              partnerName={partnerDisplay}
-                              fulfillmentDetail={metric.fulfillmentDetail}
-                            />
-                          </td>
-                        );
-                      })}
-
-                      {/* SECTION 3: Daily Bar Charts (Dotted!) */}
-                      {section3Days.map((dayInfo, idx) => {
-                        const metric = getChauffeurDayMetric(item, 'section3', idx, dayInfo);
-                        return (
-                          <td
-                            key={dayInfo.key}
-                            className="py-2 px-1 text-center border-r border-emerald-100 last:border-r-0 bg-emerald-50/15"
-                          >
-                            <ChauffeurDayBarChart
-                              dayInfo={dayInfo}
-                              rank={metric.rank}
-                              bookingsRecommended={metric.bookingsRecommended}
-                              bookingsFulfilled={metric.bookingsFulfilled}
-                              section="section3"
-                              chauffeurName={item.name}
-                              partnerName={partnerDisplay}
-                              fulfillmentDetail={metric.fulfillmentDetail}
-                            />
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  );
-                }
 
                 // Default Row rendering for Partners & Program tabs
                 return (
@@ -811,49 +650,6 @@ export const TableSection: React.FC<TableSectionProps> = ({
 
           {/* Footer Total Row */}
           <tfoot>
-            {currentTab === 'chauffeurs' ? (
-              <tr className="border-t-2 border-slate-200 bg-white font-bold text-[13px] text-slate-900">
-                <td className="py-4 px-5 border-r border-slate-200/80 sticky left-0 bg-white z-10 shadow-[1px_0_3px_rgba(0,0,0,0.03)]">
-                  <span className="font-bold">Total / Blended ({totalCount} chauffeurs)</span>
-                </td>
-
-                {/* Section 1 Totals */}
-                <td
-                  colSpan={section1Days.length}
-                  className="py-3 px-3 text-center font-mono border-r border-slate-200/80 bg-slate-50/40"
-                >
-                  <span className="text-xs text-slate-500 font-normal">Total: </span>
-                  <span className="font-bold text-slate-900">{totalPrecedingRec.toLocaleString('en-IN')} rec</span>
-                  <span className="text-slate-300 mx-1.5">·</span>
-                  <span className="font-bold text-emerald-600">{totalPrecedingFul.toLocaleString('en-IN')} ful</span>
-                  <span className="text-xs text-slate-500 font-normal ml-1">({totalPrecedingPct}%)</span>
-                </td>
-
-                {/* Section 2 Totals */}
-                <td
-                  colSpan={section2Days.length}
-                  className="py-3 px-3 text-center font-mono border-r border-blue-200/80 bg-blue-50/20"
-                >
-                  <span className="text-xs text-blue-600/80 font-normal">Total: </span>
-                  <span className="font-bold text-slate-900">{totalInFocusRec.toLocaleString('en-IN')} rec</span>
-                  <span className="text-slate-300 mx-1.5">·</span>
-                  <span className="font-bold text-emerald-600">{totalInFocusFul.toLocaleString('en-IN')} ful</span>
-                  <span className="text-xs text-blue-700 font-normal ml-1">({totalInFocusPct}%)</span>
-                </td>
-
-                {/* Section 3 Totals */}
-                <td
-                  colSpan={section3Days.length}
-                  className="py-3 px-3 text-center font-mono bg-emerald-50/20"
-                >
-                  <span className="text-xs text-emerald-700/80 font-normal">Forecast: </span>
-                  <span className="font-bold text-slate-900">{totalUpcomingRec.toLocaleString('en-IN')} rec</span>
-                  <span className="text-slate-300 mx-1.5">·</span>
-                  <span className="font-bold text-emerald-600">{totalUpcomingFul.toLocaleString('en-IN')} ful</span>
-                  <span className="text-xs text-emerald-700 font-normal ml-1">({totalUpcomingPct}%)</span>
-                </td>
-              </tr>
-            ) : (
               <tr className="border-t-2 border-slate-200 bg-white font-bold text-[13px] text-slate-900">
                 <td className="py-4 px-5">
                   <span className="font-bold">Total / Blended ({totalCount} rows)</span>
@@ -973,10 +769,10 @@ export const TableSection: React.FC<TableSectionProps> = ({
                   </div>
                 </td>
               </tr>
-            )}
           </tfoot>
         </table>
       </div>
+      )}
     </div>
   );
 };
